@@ -1,12 +1,545 @@
+
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <style>
-        body {
-            background-color: teal;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arcade Universe</title>
+
+<style>
+* { box-sizing:border-box; }
+body {
+  margin:0;
+  background:#090d1c;
+  color:white;
+  font-family:Arial,sans-serif;
+  text-align:center;
+}
+header {
+  padding:22px 10px;
+  background:linear-gradient(120deg,#171b46,#54228a);
+}
+h1 { margin:5px; color:#a5b4fc; }
+p { color:#cbd5e1; }
+.container { max-width:1000px; margin:auto; padding:18px; }
+.games {
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:15px;
+}
+.game {
+  background:#171d35;
+  padding:22px 12px;
+  border:1px solid #343d65;
+  border-radius:15px;
+  cursor:pointer;
+  transition:.2s;
+}
+.game:hover { transform:translateY(-5px); border-color:#a78bfa; }
+.game .emoji { font-size:45px; }
+button,select {
+  padding:12px 18px;
+  margin:5px;
+  border:0;
+  border-radius:9px;
+  background:#7655e9;
+  color:white;
+  font-weight:bold;
+  cursor:pointer;
+}
+button:hover { background:#987cff; }
+#gameArea { display:none; }
+canvas {
+  display:block;
+  width:100%;
+  max-width:900px;
+  height:auto;
+  margin:15px auto;
+  background:#080c19;
+  border:2px solid #5554a0;
+  border-radius:12px;
+  touch-action:none;
+}
+#score { color:#4ade80; font-size:20px; }
+.controls button { min-width:65px; }
+footer { padding:25px; color:#64748b; }
+</style>
 </head>
+
 <body>
+
+<header>
+<h1>🎮 ARCADE UNIVERSE</h1>
+<p>Choose your game. Challenge yourself. Have fun!</p>
+</header>
+
+<div class="container">
+
+<section id="menu">
+<h2>SELECT YOUR GAME</h2>
+
+<div class="games">
+  <div class="game" onclick="startGame('snake')">
+    <div class="emoji">🐍</div>
+    <h3>Snake</h3>
+    <p>2D · 1 Player</p>
+  </div>
+
+  <div class="game" onclick="startGame('pong')">
+    <div class="emoji">🏓</div>
+    <h3>Pong Battle</h3>
+    <p>2D · 2 Players</p>
+  </div>
+
+  <div class="game" onclick="startGame('runner')">
+    <div class="emoji">🏎️</div>
+    <h3>Neon Runner</h3>
+    <p>3D-style · 1 Player</p>
+  </div>
+
+  <div class="game" onclick="startGame('platform')">
+    <div class="emoji">🦸</div>
+    <h3>Jump Quest</h3>
+    <p>2D · 1 Player</p>
+  </div>
+</div>
+</section>
+
+<section id="gameArea">
+<h2 id="gameTitle">Game</h2>
+<div id="score">Score: 0</div>
+
+<canvas id="canvas" width="900" height="500"></canvas>
+
+<div class="controls">
+  <button onclick="move('left')">⬅️</button>
+  <button onclick="move('up')">⬆️</button>
+  <button onclick="move('down')">⬇️</button>
+  <button onclick="move('right')">➡️</button>
+</div>
+
+<p id="instructions"></p>
+
+<button onclick="restart()">🔄 Restart</button>
+<button onclick="backToMenu()">🏠 Main Menu</button>
+</section>
+
+</div>
+
+<footer>ARCADE UNIVERSE · Made with HTML, CSS & JavaScript</footer>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+let game = "";
+let score = 0;
+let running = false;
+let over = false;
+let timer = null;
+let animation = null;
+
+const keys = {};
+const W = canvas.width;
+const H = canvas.height;
+
+let snake, food, direction, nextDirection;
+let ball, paddle1, paddle2;
+let player, obstacles, speed, lane;
+let platforms, playerY, velocityY, jumping;
+let lastTime = 0;
+
+function startGame(name) {
+  game = name;
+  document.getElementById("menu").style.display = "none";
+  document.getElementById("gameArea").style.display = "block";
+
+  const titles = {
+    snake:"🐍 Snake",
+    pong:"🏓 Pong Battle",
+    runner:"🏎️ Neon Runner",
+    platform:"🦸 Jump Quest"
+  };
+
+  const instructions = {
+    snake:"Use arrow keys or buttons to eat food.",
+    pong:"Player 1: W/S. Player 2: Arrow Up/Down.",
+    runner:"Use left and right arrows to dodge obstacles.",
+    platform:"Use left/right arrows and space to jump."
+  };
+
+  document.getElementById("gameTitle").textContent = titles[name];
+  document.getElementById("instructions").textContent = instructions[name];
+  restart();
+}
+
+function stop() {
+  running = false;
+  clearInterval(timer);
+  cancelAnimationFrame(animation);
+}
+
+function restart() {
+  stop();
+  score = 0;
+  over = false;
+  running = true;
+  updateScore();
+
+  if (game === "snake") {
+    snake = [{x:10,y:10},{x:9,y:10},{x:8,y:10}];
+    direction = {x:1,y:0};
+    nextDirection = {x:1,y:0};
+    newFood();
+    timer = setInterval(snakeTick,110);
+  }
+
+  if (game === "pong") {
+    ball = {x:450,y:250,vx:5,vy:3};
+    paddle1 = 210;
+    paddle2 = 210;
+    timer = setInterval(pongTick,20);
+  }
+
+  if (game === "runner") {
+    lane = 1;
+    obstacles = [];
+    speed = 6;
+    player = 250;
+    timer = setInterval(runnerTick,25);
+  }
+
+  if (game === "platform") {
+    player = {x:80,y:350,w:35,h:40};
+    playerY = 0;
+    velocityY = 0;
+    jumping = false;
+    platforms = [
+      {x:0,y:430,w:900},
+      {x:220,y:350,w:130},
+      {x:420,y:285,w:140},
+      {x:650,y:350,w:150}
+    ];
+    timer = setInterval(platformTick,25);
+  }
+
+  draw();
+}
+
+function updateScore() {
+  document.getElementById("score").textContent =
+    "Score: " + score;
+}
+
+function addScore(points=1) {
+  score += points;
+  updateScore();
+}
+
+function endGame(message="Game Over!") {
+  if (over) return;
+  over = true;
+  running = false;
+  clearInterval(timer);
+  ctx.fillStyle = "rgba(0,0,0,.75)";
+  ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center";
+  ctx.font = "bold 40px Arial";
+  ctx.fillText(message,W/2,H/2);
+  ctx.font = "22px Arial";
+  ctx.fillText("Final score: "+score,W/2,H/2+45);
+  ctx.textAlign = "left";
+}
+
+function newFood() {
+  food = {
+    x:Math.floor(Math.random()*29),
+    y:Math.floor(Math.random()*19)
+  };
+}
+
+function snakeTick() {
+  if (!running) return;
+  direction = nextDirection;
+  const head = {
+    x:snake[0].x+direction.x,
+    y:snake[0].y+direction.y
+  };
+
+  if (head.x<0 || head.x>=30 || head.y<0 || head.y>=20 ||
+      snake.some(s=>s.x===head.x && s.y===head.y)) {
+    endGame();
+    return;
+  }
+
+  snake.unshift(head);
+
+  if (head.x===food.x && head.y===food.y) {
+    addScore(10);
+    newFood();
+  } else {
+    snake.pop();
+  }
+  draw();
+}
+
+function pongTick() {
+  if (!running) return;
+
+  ball.x+=ball.vx;
+  ball.y+=ball.vy;
+
+  if(ball.y<10 || ball.y>490) ball.vy*=-1;
+
+  if(ball.x<45 && ball.y>paddle1 && ball.y<paddle1+100) {
+    ball.vx=Math.abs(ball.vx)*1.06;
+    addScore(1);
+  }
+
+  if(ball.x>855 && ball.y>paddle2 && ball.y<paddle2+100) {
+    ball.vx=-Math.abs(ball.vx)*1.06;
+    addScore(1);
+  }
+
+  if(ball.x<0 || ball.x>900) {
+    endGame(ball.x<0?"Player 2 Wins!":"Player 1 Wins!");
+    return;
+  }
+
+  draw();
+}
+
+function runnerTick() {
+  if (!running) return;
+
+  if(Math.random()<0.035) {
+    obstacles.push({
+      lane:Math.floor(Math.random()*3),
+      y:-50
+    });
+  }
+
+  obstacles.forEach(o=>o.y+=speed);
+  obstacles=obstacles.filter(o=>o.y<530);
+
+  for(const o of obstacles) {
+    if(o.lane===lane && o.y>385 && o.y<465) {
+      endGame("You crashed!");
+      return;
+    }
+  }
+
+  speed+=0.002;
+  addScore(1);
+  draw();
+}
+
+function platformTick() {
+  if(!running) return;
+
+  if(keys.ArrowLeft) player.x-=5;
+  if(keys.ArrowRight) player.x+=5;
+
+  player.x=Math.max(0,Math.min(865,player.x));
+
+  velocityY+=0.6;
+  player.y+=velocityY;
+  jumping=true;
+
+  for(const p of platforms) {
+    if(velocityY>=0 &&
+       player.x+player.w>p.x &&
+       player.x<p.x+p.w &&
+       player.y+player.h>=p.y &&
+       player.y+player.h-velocityY<=p.y) {
+      player.y=p.y-player.h;
+      velocityY=0;
+      jumping=false;
+    }
+  }
+
+  if(player.y>520) {
+    endGame();
+    return;
+  }
+
+  if(player.x>850) {
+    addScore(100);
+    player.x=20;
+    player.y=250;
+    platforms[1].y-=15;
+  }
+
+  draw();
+}
+
+function draw() {
+  ctx.clearRect(0,0,W,H);
+
+  if(game==="snake") drawSnake();
+  if(game==="pong") drawPong();
+  if(game==="runner") drawRunner();
+  if(game==="platform") drawPlatform();
+}
+
+function drawSnake() {
+  ctx.fillStyle="#101c2c";
+  ctx.fillRect(0,0,W,H);
+
+  ctx.fillStyle="#f43f5e";
+  ctx.fillRect(food.x*30,food.y*25,25,20);
+
+  snake.forEach((s,i)=>{
+    ctx.fillStyle=i===0?"#a3e635":"#22c55e";
+    ctx.fillRect(s.x*30,s.y*25,25,20);
+  });
+}
+
+function drawPong() {
+  ctx.fillStyle="#080c19";
+  ctx.fillRect(0,0,W,H);
+
+  ctx.setLineDash([12,12]);
+  ctx.strokeStyle="#64748b";
+  ctx.beginPath();
+  ctx.moveTo(450,0);
+  ctx.lineTo(450,500);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle="#a78bfa";
+  ctx.fillRect(25,paddle1,18,100);
+  ctx.fillRect(857,paddle2,18,100);
+
+  ctx.fillStyle="#4ade80";
+  ctx.beginPath();
+  ctx.arc(ball.x,ball.y,13,0,Math.PI*2);
+  ctx.fill();
+}
+
+function drawRunner() {
+  ctx.fillStyle="#10152d";
+  ctx.fillRect(0,0,W,H);
+
+  // Perspective road
+  ctx.fillStyle="#24234a";
+  ctx.beginPath();
+  ctx.moveTo(360,40);
+  ctx.lineTo(540,40);
+  ctx.lineTo(850,500);
+  ctx.lineTo(50,500);
+  ctx.fill();
+
+  ctx.strokeStyle="#a78bfa";
+  ctx.lineWidth=4;
+
+  for(let x=0;x<2;x++) {
+    ctx.beginPath();
+    ctx.moveTo(420+x*60,40);
+    ctx.lineTo(300+x*300,500);
+    ctx.stroke();
+  }
+
+  obstacles.forEach(o=>{
+    let x=laneX(o.lane,o.y);
+    let size=15+o.y/15;
+    ctx.fillStyle="#fb7185";
+    ctx.fillRect(x-size/2,o.y,size,size);
+  });
+
+  let px=laneX(lane,450);
+  ctx.fillStyle="#4ade80";
+  ctx.fillRect(px-20,410,40,55);
+
+  ctx.fillStyle="white";
+  ctx.font="20px Arial";
+  ctx.fillText("DODGE THE BLOCKS!",20,35);
+}
+
+function laneX(l,y) {
+  const perspective=Math.max(0,Math.min(1,y/500));
+  return 450+(l-1)*perspective*300;
+}
+
+function drawPlatform() {
+  ctx.fillStyle="#121c38";
+  ctx.fillRect(0,0,W,H);
+
+  platforms.forEach(p=>{
+    ctx.fillStyle="#8b5cf6";
+    ctx.fillRect(p.x,p.y,p.w,18);
+  });
+
+  ctx.fillStyle="#facc15";
+  ctx.fillRect(player.x,player.y,player.w,player.h);
+
+  ctx.fillStyle="white";
+  ctx.font="18px Arial";
+  ctx.fillText("REACH THE RIGHT SIDE!",20,35);
+}
+
+function move(d) {
+  if(!running) return;
+
+  if(game==="snake") {
+    const dirs={
+      left:{x:-1,y:0},
+      right:{x:1,y:0},
+      up:{x:0,y:-1},
+      down:{x:0,y:1}
+    };
+    const n=dirs[d];
+    if(n && !(n.x===-direction.x && n.y===-direction.y))
+      nextDirection=n;
+  }
+
+  if(game==="runner") {
+    if(d==="left") lane=Math.max(0,lane-1);
+    if(d==="right") lane=Math.min(2,lane+1);
+  }
+
+  if(game==="platform" && d==="up" && !jumping) {
+    velocityY=-13;
+    jumping=true;
+  }
+}
+
+document.addEventListener("keydown",e=>{
+  keys[e.key]=true;
+
+  if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key))
+    e.preventDefault();
+
+  if(e.key==="ArrowLeft" || e.key==="a")
+    move("left");
+
+  if(e.key==="ArrowRight" || e.key==="d")
+    move("right");
+
+  if(e.key==="ArrowUp" || e.key==="w")
+    move("up");
+
+  if(e.key==="ArrowDown" || e.key==="s")
+    move("down");
+
+  if(game==="pong") {
+    if(e.key==="w") paddle1=Math.max(0,paddle1-20);
+    if(e.key==="s") paddle1=Math.min(400,paddle1+20);
+    if(e.key==="ArrowUp") paddle2=Math.max(0,paddle2-20);
+    if(e.key==="ArrowDown") paddle2=Math.min(400,paddle2+20);
+  }
+});
+
+document.addEventListener("keyup",e=>keys[e.key]=false);
+
+function backToMenu() {
+  stop();
+  document.getElementById("gameArea").style.display="none";
+  document.getElementById("menu").style.display="block";
+}
+
+draw;
+</script>
 </body>
 </html>
